@@ -1,0 +1,26 @@
+{
+  "name": "claude-n8n-bridge",
+  "version": "1.0.0",
+  "description": "Local infrastructure orchestrator to run Claude Code CLI tasks via n8n",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.3.4",
+  "engines": {
+    "node": ">=20.6.0"
+  },
+  "scripts": {
+    "start": "pnpm run docker:up && pnpm run runner",
+    "runner": "node --env-file-if-exists=.env runner/runner.js",
+    "runner:dev": "node --watch --env-file-if-exists=.env runner/runner.js",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "n8n:export": "docker exec -it n8n_local n8n export:workflow --all --output=/data/workflows/",
+    "n8n:import": "docker exec -it n8n_local n8n import:workflow --input=/data/workflows/email-to-claude.json",
+    "test": "node --test"
+  },
+  "author": "Omar Caja",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^5.2.1"
+  }
+}
