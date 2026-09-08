@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A local orchestrator that lets n8n workflows trigger Claude Code CLI runs against a target repository. n8n (running in Docker) receives external events (e.g. email), calls a local Express webhook, which shells out to `claude --dangerously-skip-permissions -p "<prompt>"` against `PROJECT_PATH`, then commits and pushes the result.
+A local orchestrator that lets n8n workflows trigger Claude Code CLI runs against a target repository. n8n (running in Docker) receives external events (e.g. email), calls a local Express webhook, which shells out to `claude --dangerously-skip-permissions -p "<prompt>"` against `PROJECT_PATH`, then commits and pushes the result. A second route accepts an email with an image attachment and writes it into `PROJECT_PATH` before invoking Claude.
 
 ## Commands
 
@@ -19,15 +19,17 @@ pnpm n8n:export      # export all n8n workflows to n8n/workflows/
 pnpm n8n:import      # import n8n/workflows/email-to-claude.json into n8n
 ```
 
-There is no build, lint, or test tooling in this repo.
+There is no build or lint tooling in this repo. Tests: `pnpm test` (`node --test` on `runner/runner.test.js`).
 
 ## Architecture
 
-- **`runner/runner.js`** — the entire service. A single Express app with one route, `POST /api/v1/claude/task`, protected by an `x-api-token` header checked against `AUTH_TOKEN`.
+- **`runner/runner.js`** — the entire service. A single Express app with two routes, both protected by an `x-api-token` header checked against `AUTH_TOKEN`:
+  - `POST /api/v1/claude/offer` — `{ prompt, subject }` in.
+  - `POST /api/v1/claude/blog` — `{ prompt, subject, blogName, filename, media }` in, where `media` is base64 and the file is written to `PROJECT_PATH/public/blogs/<blogName>/<filename>` (`blogName`/`filename` are sanitized to single path segments via `path.basename`, then double-checked to resolve inside `public/blogs`). Writes the file first, then runs the same task pipeline as `/offer` so the prompt and commit can see it.
 - **Concurrency**: a module-level `isProcessing` flag rejects (`429`) any request that arrives while a previous task is still running, since tasks mutate `PROJECT_PATH`'s git working tree.
-- **Request flow**: `{ prompt, subject }` in → prompt/subject are passed as env vars (`RUNNER_PROMPT`/`RUNNER_SUBJECT`) to a shell command that runs `claude -p "$RUNNER_PROMPT"` in `PROJECT_PATH`, then `git add . && git commit && git push` only if there are staged changes → stdout/stderr returned as JSON. (Attachment upload support was removed; re-add if needed.)
+- **Request flow** (shared by both routes via `runClaudeTask`): prompt/subject are passed as env vars (`RUNNER_PROMPT`/`RUNNER_SUBJECT`) to a shell command that runs `claude -p "$RUNNER_PROMPT"` in `PROJECT_PATH`, then `git add . && git commit && git push` only if there are staged changes → stdout/stderr returned as JSON.
 - **n8n side**: `n8n/workflows/email-to-claude.json` is the workflow export (currently an empty placeholder — regenerate it with `pnpm n8n:export` after building the real workflow in n8n). `docker-compose.yml` runs n8n only; the runner itself is not containerized and runs on the host so it can invoke the `claude` CLI and reach `PROJECT_PATH` directly. n8n reaches the host runner via `host.docker.internal` (enabled through `extra_hosts`).
-- **Config** is entirely env-driven via `.env` (see `.env.example`, loaded with Node's `--env-file-if-exists`, no `dotenv` dependency): `PORT`, `AUTH_TOKEN`, `PROJECT_PATH` (absolute path to the target git repo Claude Code will operate on).
+- **Config** is entirely env-driven via `.env` (see `.env.example`, loaded with Node's `--env-file-if-exists`, no `dotenv` dependency): `PORT`, `AUTH_TOKEN`, `PROJECT_PATH` (absolute path to the target git repo Claude Code will operate on), `MAX_FILE_SIZE` (express body-size limit, e.g. `20mb`; caps the base64 `media` payload on `/blog`).
 
 ## Things to know when touching runner.js
 

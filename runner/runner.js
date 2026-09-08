@@ -1,12 +1,14 @@
 import express from "express";
 import { exec } from "node:child_process";
 import fs from "node:fs";
+import path from "node:path";
 import crypto from "node:crypto";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const PROJECT_PATH = process.env.PROJECT_PATH;
 const AUTH_TOKEN = process.env.AUTH_TOKEN;
+const MAX_FILE_SIZE = process.env.MAX_FILE_SIZE || "20mb";
 
 // Validate required environment variables
 for (const [name, value] of Object.entries({ PROJECT_PATH, AUTH_TOKEN })) {
@@ -44,26 +46,17 @@ const authenticate = (req, res, next) => {
 
 app.use(authenticate);
 
-app.use(express.json());
+// ponytail: base64 inflates payload size ~33%, so MAX_FILE_SIZE should be set
+// higher than the largest raw attachment expected.
+app.use(express.json({ limit: MAX_FILE_SIZE }));
 
 // Concurrency guard to avoid simultaneous runs against the same repository
 let isProcessing = false;
 
-app.post("/api/v1/claude/task", (req, res) => {
-  const { prompt, subject } = req.body;
-
-  if (!prompt) {
-    return res.status(400).json({ error: 'The "prompt" field is required' });
-  }
-
-  if (isProcessing) {
-    return res.status(429).json({
-      error: "Busy",
-      message:
-        "Another task is already running against the target repository. Retry shortly.",
-    });
-  }
-
+// Runs `claude -p <prompt>` against PROJECT_PATH, then commits and pushes any
+// resulting changes. Shared by both routes; the media route just writes the
+// attachment to disk first so `git add .` and the prompt can see it.
+function runClaudeTask(res, prompt, subject) {
   isProcessing = true;
   console.log(
     `\n[+] [${new Date().toLocaleTimeString()}] New task received: ${subject || "No subject"}`,
@@ -116,6 +109,78 @@ app.post("/api/v1/claude/task", (req, res) => {
       });
     },
   );
+}
+
+// Creates/edits an offer: no attachment, just a prompt for Claude to act on.
+app.post("/api/v1/claude/offer", (req, res) => {
+  const { prompt, subject } = req.body;
+
+  if (!prompt) {
+    return res.status(400).json({ error: 'The "prompt" field is required' });
+  }
+
+  if (isProcessing) {
+    return res.status(429).json({
+      error: "Busy",
+      message:
+        "Another task is already running against the target repository. Retry shortly.",
+    });
+  }
+
+  runClaudeTask(res, prompt, subject);
+});
+
+const BLOGS_DIR = path.join(PROJECT_PATH, "public", "blogs");
+
+// Creates a blog post: writes its image (at public/blogs/<blogName>/<filename>)
+// before invoking Claude, then runs the same pipeline as /offer.
+app.post("/api/v1/claude/blog", (req, res) => {
+  const { prompt, subject, blogName, filename, media } = req.body;
+
+  if (!prompt) {
+    return res.status(400).json({ error: 'The "prompt" field is required' });
+  }
+  if (!blogName) {
+    return res.status(400).json({ error: 'The "blogName" field is required' });
+  }
+  if (!filename) {
+    return res.status(400).json({ error: 'The "filename" field is required' });
+  }
+  if (!media) {
+    return res.status(400).json({ error: 'The "media" field is required' });
+  }
+
+  // path.basename strips any directory components, so blogName/filename can only
+  // ever be a single folder/file name each. Still confirm the result lands inside
+  // BLOGS_DIR: basename(".") and basename("..") pass through unchanged.
+  const destination = path.join(BLOGS_DIR, path.basename(blogName), path.basename(filename));
+  if (!destination.startsWith(BLOGS_DIR + path.sep)) {
+    return res
+      .status(400)
+      .json({ error: '"blogName" must be a valid folder name' });
+  }
+
+  if (isProcessing) {
+    return res.status(429).json({
+      error: "Busy",
+      message:
+        "Another task is already running against the target repository. Retry shortly.",
+    });
+  }
+
+  try {
+    fs.mkdirSync(path.dirname(destination), { recursive: true });
+    fs.writeFileSync(destination, Buffer.from(media, "base64"));
+  } catch (err) {
+    console.error(`[-] Failed to write attachment: ${err.message}`);
+    return res.status(500).json({
+      status: "error",
+      message: "Failed to write the attachment to the project",
+      detail: err.message,
+    });
+  }
+
+  runClaudeTask(res, prompt, subject);
 });
 
 app.listen(PORT, () => {

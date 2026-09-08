@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn, execSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, chmodSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,12 +9,17 @@ import { fileURLToPath } from "node:url";
 const repoRoot = path.dirname(fileURLToPath(import.meta.url));
 
 function setupProjectRepo() {
+  const remote = mkdtempSync(path.join(tmpdir(), "runner-test-remote-"));
+  execSync("git init -q --bare", { cwd: remote });
+
   const dir = mkdtempSync(path.join(tmpdir(), "runner-test-project-"));
   execSync("git init -q", { cwd: dir });
   execSync('git config user.email "test@test.local"', { cwd: dir });
   execSync('git config user.name "Test"', { cwd: dir });
   writeFileSync(path.join(dir, "README.md"), "seed\n");
   execSync("git add . && git commit -q -m seed", { cwd: dir });
+  execSync(`git remote add origin ${remote}`, { cwd: dir });
+  execSync("git push -q -u origin HEAD", { cwd: dir });
   return dir;
 }
 
@@ -40,7 +45,9 @@ async function waitForServer(url) {
   throw new Error("server did not start in time");
 }
 
-test("rejects a missing prompt with 400, rejects a concurrent task with 429", async (t) => {
+// Spins up the runner against a throwaway project repo and a stubbed `claude`
+// binary. Returns the request base URL, auth headers, and the project dir.
+async function startRunner(t) {
   const projectDir = setupProjectRepo();
   const binDir = setupFakeClaudeBin();
   const port = 4000 + Math.floor(Math.random() * 1000);
@@ -62,27 +69,73 @@ test("rejects a missing prompt with 400, rejects a concurrent task with 429", as
   const base = `http://localhost:${port}`;
   await waitForServer(base);
 
-  const headers = { "content-type": "application/json", "x-api-token": token };
+  return {
+    base,
+    projectDir,
+    headers: { "content-type": "application/json", "x-api-token": token },
+  };
+}
 
-  const missingPrompt = await fetch(`${base}/api/v1/claude/task`, {
+test("offer", async (t) => {
+  const { base, headers } = await startRunner(t);
+
+  await t.test("rejects a missing prompt with 400", async () => {
+    const res = await fetch(`${base}/api/v1/claude/offer`, {
+      method: "POST",
+      headers,
+      body: "{}",
+    });
+    assert.equal(res.status, 400);
+  });
+
+  await t.test("rejects a concurrent task with 429", async () => {
+    const first = fetch(`${base}/api/v1/claude/offer`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ prompt: "noop" }),
+    });
+    await new Promise((r) => setTimeout(r, 200));
+    const second = await fetch(`${base}/api/v1/claude/offer`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ prompt: "noop" }),
+    });
+    assert.equal(second.status, 429);
+
+    await first;
+  });
+});
+
+test("blog writes the attachment into the project and rejects a blogName of \"..\"", async (t) => {
+  const { base, headers, projectDir } = await startRunner(t);
+  const media = Buffer.from("fake-image-bytes").toString("base64");
+
+  const traversal = await fetch(`${base}/api/v1/claude/blog`, {
     method: "POST",
     headers,
-    body: "{}",
+    body: JSON.stringify({
+      prompt: "noop",
+      blogName: "..",
+      filename: "cover.png",
+      media,
+    }),
   });
-  assert.equal(missingPrompt.status, 400);
+  assert.equal(traversal.status, 400);
 
-  const first = fetch(`${base}/api/v1/claude/task`, {
+  const ok = await fetch(`${base}/api/v1/claude/blog`, {
     method: "POST",
     headers,
-    body: JSON.stringify({ prompt: "noop" }),
+    body: JSON.stringify({
+      prompt: "noop",
+      blogName: "my-first-post",
+      filename: "cover.png",
+      media,
+    }),
   });
-  await new Promise((r) => setTimeout(r, 200));
-  const second = await fetch(`${base}/api/v1/claude/task`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ prompt: "noop" }),
-  });
-  assert.equal(second.status, 429);
+  assert.equal(ok.status, 200);
 
-  await first;
+  const written = readFileSync(
+    path.join(projectDir, "public/blogs/my-first-post/cover.png"),
+  );
+  assert.equal(written.toString(), "fake-image-bytes");
 });
