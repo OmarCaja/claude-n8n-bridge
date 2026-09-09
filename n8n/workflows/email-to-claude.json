@@ -12,10 +12,7 @@
       "name": "New Offer Email",
       "type": "n8n-nodes-base.emailReadImap",
       "typeVersion": 2,
-      "position": [
-        -560,
-        0
-      ],
+      "position": [-560, 0],
       "credentials": {
         "imap": {
           "id": "1",
@@ -25,16 +22,32 @@
     },
     {
       "parameters": {
-        "jsCode": "// Only process offer emails from the pharmacy's offers mailbox; anything\n// else landing in the inbox is ignored.\nconst OFFERS_SENDER = 'farmaciaalbinyana@gmail.com';\n\n// Each offer email body is a table of rows, one offer per line:\n// \"<start> A <end>\\t<brand>\\t<description>\" (tab-separated; some clients\n// send runs of spaces instead of tabs). Blank lines between rows are skipped.\n// Turns each valid row into one output item carrying a ready-to-send prompt.\nconst results = [];\n\nfor (const item of $input.all()) {\n  const from = item.json.from?.text || item.json.from?.value?.[0]?.address || '';\n  if (!from.toLowerCase().includes(OFFERS_SENDER)) continue;\n\n  const body = item.json.textPlain || item.json.text || '';\n  const lines = body.split(/\\r?\\n/);\n\n  for (const line of lines) {\n    if (!line.trim()) continue;\n\n    let parts = line.split('\\t').map((p) => p.trim()).filter(Boolean);\n    if (parts.length < 3) {\n      parts = line.split(/\\s{2,}/).map((p) => p.trim()).filter(Boolean);\n    }\n    if (parts.length < 3) continue;\n\n    const [dateRange, brand, ...descriptionParts] = parts;\n    const description = descriptionParts.join(' ');\n\n    const dateMatch = dateRange.match(\n      /(\\d{1,2}\\/\\d{1,2}\\/\\d{2,4})\\s*A\\s*(\\d{1,2}\\/\\d{1,2}\\/\\d{2,4})/i,\n    );\n    if (!dateMatch) continue;\n    const [, startDate, endDate] = dateMatch;\n\n    results.push({\n      json: {\n        brand,\n        startDate,\n        endDate,\n        description,\n        prompt:\n          `Add or update this promotional offer on the offers page:\\n` +\n          `- Brand: ${brand}\\n` +\n          `- Valid: ${startDate} to ${endDate}\\n` +\n          `- Details: ${description}\\n\\n` +\n          `If an offer for this brand with overlapping dates already exists, update it instead of creating a duplicate.`,\n        subject: `Offer: ${brand} (${startDate}-${endDate})`,\n      },\n    });\n  }\n}\n\nreturn results;"
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "sender-check",
+              "leftValue": "={{ $json.from }}",
+              "rightValue": "farmaciaalbinyana@gmail.com",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
       },
       "id": "1f1a2b3c-0002-4a1a-8a1a-000000000002",
-      "name": "Parse Offers & Build Prompts",
-      "type": "n8n-nodes-base.code",
+      "name": "Is From Offers Mailbox",
+      "type": "n8n-nodes-base.filter",
       "typeVersion": 2,
-      "position": [
-        -336,
-        0
-      ]
+      "position": [-336, 0]
     },
     {
       "parameters": {
@@ -46,11 +59,11 @@
           "parameters": [
             {
               "name": "prompt",
-              "value": "={{ $json.prompt }}"
+              "value": "={{ `/add-offer\n\nEmail subject: ${$json.subject}\n\nEmail body:\n${$json.textPlain}` }}"
             },
             {
               "name": "subject",
-              "value": "={{ $json.subject }}"
+              "value": "={{ `Offer update: ${$json.subject}` }}"
             }
           ]
         },
@@ -62,14 +75,14 @@
       "name": "Call Runner /offer",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [
-        -112,
-        0
-      ],
+      "position": [-112, 0],
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 60000,
       "credentials": {
         "httpHeaderAuth": {
           "id": "2",
-          "name": "Runner API Token"
+          "name": "Header Auth account"
         }
       }
     }
@@ -79,14 +92,14 @@
       "main": [
         [
           {
-            "node": "Parse Offers & Build Prompts",
+            "node": "Is From Offers Mailbox",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Parse Offers & Build Prompts": {
+    "Is From Offers Mailbox": {
       "main": [
         [
           {

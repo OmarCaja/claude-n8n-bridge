@@ -9,6 +9,7 @@ const PORT = process.env.PORT || 3000;
 const PROJECT_PATH = process.env.PROJECT_PATH;
 const AUTH_TOKEN = process.env.AUTH_TOKEN;
 const MAX_FILE_SIZE = process.env.MAX_FILE_SIZE || "20mb";
+const SKIP_GIT = process.env.SKIP_GIT === "true";
 
 // Validate required environment variables
 for (const [name, value] of Object.entries({ PROJECT_PATH, AUTH_TOKEN })) {
@@ -59,7 +60,7 @@ let isProcessing = false;
 function runClaudeTask(res, prompt, subject) {
   isProcessing = true;
   console.log(
-    `\n[+] [${new Date().toLocaleTimeString()}] New task received: ${subject || "No subject"}`,
+    `\n[+] [${new Date().toLocaleTimeString()}] New task received: ${subject || "No subject"}${SKIP_GIT ? " (SKIP_GIT: commit/push will be skipped)" : ""}`,
   );
 
   const commitSubject = subject || "Code update";
@@ -67,10 +68,11 @@ function runClaudeTask(res, prompt, subject) {
   // Prompt/subject travel via env vars (not string-interpolated into the shell command)
   // so no manual escaping is needed and shell metacharacters in them can't inject commands.
   // Skip the commit+push when Claude made no changes, so a no-op run isn't reported as a failure.
-  const command =
-    'claude --dangerously-skip-permissions -p "$RUNNER_PROMPT" && ' +
-    "git add . && " +
-    '(git diff --cached --quiet || (git commit -m "$RUNNER_SUBJECT" && git push))';
+  const command = SKIP_GIT
+    ? 'claude --dangerously-skip-permissions -p "$RUNNER_PROMPT"'
+    : 'claude --dangerously-skip-permissions -p "$RUNNER_PROMPT" && ' +
+      "git add . && " +
+      '(git diff --cached --quiet || (git commit -m "$RUNNER_SUBJECT" && git push))';
 
   // ponytail: a timeout kill can land mid-git-commit, leaving the tree dirty for the next
   // request. Fine for a single-operator local tool; add a `git status --porcelain` check
@@ -101,7 +103,11 @@ function runClaudeTask(res, prompt, subject) {
         });
       }
 
-      console.log("[+] Task completed and changes pushed to Git successfully.");
+      console.log(
+        SKIP_GIT
+          ? "[+] Task completed. SKIP_GIT is set, so no commit/push was made."
+          : "[+] Task completed and changes pushed to Git successfully.",
+      );
       return res.status(200).json({
         status: "success",
         message: "Code and assets processed successfully",
@@ -153,7 +159,11 @@ app.post("/api/v1/claude/blog", (req, res) => {
   // path.basename strips any directory components, so blogName/filename can only
   // ever be a single folder/file name each. Still confirm the result lands inside
   // BLOGS_DIR: basename(".") and basename("..") pass through unchanged.
-  const destination = path.join(BLOGS_DIR, path.basename(blogName), path.basename(filename));
+  const destination = path.join(
+    BLOGS_DIR,
+    path.basename(blogName),
+    path.basename(filename),
+  );
   if (!destination.startsWith(BLOGS_DIR + path.sep)) {
     return res
       .status(400)
@@ -186,4 +196,9 @@ app.post("/api/v1/claude/blog", (req, res) => {
 app.listen(PORT, () => {
   console.log(`[+] Runner listening on http://localhost:${PORT}`);
   console.log(`[+] Target repository configured: ${PROJECT_PATH}`);
+  console.log(
+    SKIP_GIT
+      ? "[+] SKIP_GIT is enabled: tasks will run Claude only, no commit/push."
+      : "[+] SKIP_GIT is disabled: tasks will commit and push changes.",
+  );
 });

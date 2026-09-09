@@ -22,6 +22,7 @@ Set via `.env` (see `.env.example`), loaded with Node's `--env-file-if-exists` �
 | `AUTH_TOKEN`    | yes      | —       | Shared secret n8n must send as `x-api-token` on every request.                |
 | `PROJECT_PATH`  | yes      | —       | Absolute path to the git repo Claude Code will edit, commit, and push.        |
 | `MAX_FILE_SIZE` | no       | `20mb`  | Body-size limit for requests; caps the base64 `media` payload on `/blog`.      |
+| `SKIP_GIT`      | no       | `false` | Testing only: run `claude` but skip `git add`/`commit`/`push` entirely.       |
 
 ## API
 
@@ -84,10 +85,10 @@ n8n runs in Docker (`pnpm docker:up` / `pnpm docker:down`); the runner itself ru
 
 ### Email to Claude - Offers
 
-`n8n/workflows/email-to-claude.json` reads incoming offer emails from `farmaciaalbinyana@gmail.com` (any other sender in the mailbox is ignored) — one row per offer, e.g. `28/9/26 A 11/10/26<TAB>ISDIN<TAB>10€ EN LA 2ª UD FOTOPROTECTORES E ISDINCEUTICS` — and calls `/api/v1/claude/offer` once per offer row. After `pnpm n8n:import`, open the workflow in n8n and set up two credentials it references but can't carry secrets for:
+`n8n/workflows/email-to-claude.json` is three nodes: an IMAP trigger, a Filter node that only lets through mail from `farmaciaalbinyana@gmail.com`, and an HTTP Request node that forwards the raw email body straight to `/api/v1/claude/offer`. Offer emails aren't parsed into structured fields in n8n — the format varies between emails, so Claude reads the raw text itself (subject + body wrapped in an instruction) and decides how many offers it describes and how to add/update each one on the offers page. After `pnpm n8n:import`, open the workflow in n8n and set up two credentials it references but can't carry secrets for:
 
-- **IMAP account** (on the "New Offer Email" trigger) — your mailbox's IMAP settings.
-- **Runner API Token** (on the "Call Runner /offer" HTTP Request node, type "Header Auth") — Name: `x-api-token`, Value: your `AUTH_TOKEN`.
+- An **IMAP** credential (on the "New Offer Email" trigger) — your mailbox's IMAP settings.
+- A **Header Auth** credential (on the "Call Runner /offer" HTTP Request node) — Name: `x-api-token`, Value: your `AUTH_TOKEN`.
 
 The blog pipeline (routing blog emails to `/api/v1/claude/blog` with an attachment) isn't built yet — this workflow only handles offers for now.
 
