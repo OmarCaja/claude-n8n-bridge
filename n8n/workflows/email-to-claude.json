@@ -1,18 +1,22 @@
 {
   "id": "email-to-claude-offers",
-  "name": "Email to Claude - Offers",
+  "name": "Email to Claude - Offers & Blog",
   "nodes": [
     {
       "parameters": {
         "mailbox": "INBOX",
         "postProcessAction": "read",
+        "format": "resolved",
         "options": {}
       },
       "id": "1f1a2b3c-0001-4a1a-8a1a-000000000001",
-      "name": "New Offer Email",
+      "name": "New Pharmacy Email",
       "type": "n8n-nodes-base.emailReadImap",
       "typeVersion": 2,
-      "position": [-560, 0],
+      "position": [
+        -560,
+        0
+      ],
       "credentials": {
         "imap": {
           "id": "1",
@@ -31,7 +35,7 @@
           "conditions": [
             {
               "id": "sender-check",
-              "leftValue": "={{ $json.from }}",
+              "leftValue": "={{ $json.from.value[0].address }}",
               "rightValue": "farmaciaalbinyana@gmail.com",
               "operator": {
                 "type": "string",
@@ -41,13 +45,84 @@
           ],
           "combinator": "and"
         },
-        "options": {}
+        "options": {
+          "ignoreCase": true
+        }
       },
       "id": "1f1a2b3c-0002-4a1a-8a1a-000000000002",
-      "name": "Is From Offers Mailbox",
+      "name": "Is From Pharmacy Mailbox",
       "type": "n8n-nodes-base.filter",
       "typeVersion": 2,
-      "position": [-336, 0]
+      "position": [
+        -224,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "rules",
+        "rules": {
+          "values": [
+            {
+              "renameOutput": true,
+              "outputKey": "offer",
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "subject-is-offer",
+                    "leftValue": "={{ $json.subject }}",
+                    "rightValue": "oferta",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "renameOutput": true,
+              "outputKey": "blog",
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "subject-is-blog",
+                    "leftValue": "={{ $json.subject }}",
+                    "rightValue": "blog",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {
+          "ignoreCase": true
+        }
+      },
+      "id": "1f1a2b3c-0004-4a1a-8a1a-000000000004",
+      "name": "Route by Subject",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        0,
+        0
+      ]
     },
     {
       "parameters": {
@@ -59,7 +134,7 @@
           "parameters": [
             {
               "name": "prompt",
-              "value": "={{ `/add-offer\n\nEmail subject: ${$json.subject}\n\nEmail body:\n${$json.textPlain}` }}"
+              "value": "={{ `/add-offer\n\nEmail subject: ${$json.subject}\n\nEmail body:\n${$json.text}` }}"
             },
             {
               "name": "subject",
@@ -75,7 +150,80 @@
       "name": "Call Runner /offer",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [-112, 0],
+      "position": [
+        224,
+        -96
+      ],
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 60000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "2",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "binaryToPropery",
+        "binaryPropertyName": "attachment_0",
+        "destinationKey": "media",
+        "options": {
+          "keepSource": "json"
+        }
+      },
+      "id": "1f1a2b3c-0005-4a1a-8a1a-000000000005",
+      "name": "Attachment to Base64",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        224,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:3000/api/v1/claude/blog",
+        "sendBody": true,
+        "specifyBody": "keypair",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "prompt",
+              "value": "={{ `/add-blog\n\nEmail subject: ${$json.subject}\n\nEmail body:\n${$json.text}` }}"
+            },
+            {
+              "name": "subject",
+              "value": "={{ `New blog post: ${$json.subject}` }}"
+            },
+            {
+              "name": "blogName",
+              "value": "={{ $json.subject.replace(/^.*blog\\s*-\\s*/i, '').trim().replace(/\\s+/g, '-') }}"
+            },
+            {
+              "name": "filename",
+              "value": "={{ $('New Pharmacy Email').item.binary.attachment_0.fileName }}"
+            },
+            {
+              "name": "media",
+              "value": "={{ $json.media }}"
+            }
+          ]
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "1f1a2b3c-0006-4a1a-8a1a-000000000006",
+      "name": "Call Runner /blog",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        448,
+        96
+      ],
       "retryOnFail": true,
       "maxTries": 5,
       "waitBetweenTries": 60000,
@@ -88,22 +236,51 @@
     }
   ],
   "connections": {
-    "New Offer Email": {
+    "New Pharmacy Email": {
       "main": [
         [
           {
-            "node": "Is From Offers Mailbox",
+            "node": "Is From Pharmacy Mailbox",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Is From Offers Mailbox": {
+    "Is From Pharmacy Mailbox": {
+      "main": [
+        [
+          {
+            "node": "Route by Subject",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by Subject": {
       "main": [
         [
           {
             "node": "Call Runner /offer",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Attachment to Base64",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Attachment to Base64": {
+      "main": [
+        [
+          {
+            "node": "Call Runner /blog",
             "type": "main",
             "index": 0
           }

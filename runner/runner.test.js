@@ -92,13 +92,13 @@ test("offer", async (t) => {
     const first = fetch(`${base}/api/v1/claude/offer`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ prompt: "noop" }),
+      body: JSON.stringify({ prompt: "noop", subject: "Test" }),
     });
     await new Promise((r) => setTimeout(r, 200));
     const second = await fetch(`${base}/api/v1/claude/offer`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ prompt: "noop" }),
+      body: JSON.stringify({ prompt: "noop", subject: "Test" }),
     });
     assert.equal(second.status, 429);
 
@@ -115,6 +115,7 @@ test("blog writes the attachment into the project and rejects a blogName of \"..
     headers,
     body: JSON.stringify({
       prompt: "noop",
+      subject: "Test",
       blogName: "..",
       filename: "cover.png",
       media,
@@ -127,6 +128,7 @@ test("blog writes the attachment into the project and rejects a blogName of \"..
     headers,
     body: JSON.stringify({
       prompt: "noop",
+      subject: "Test",
       blogName: "my-first-post",
       filename: "cover.png",
       media,

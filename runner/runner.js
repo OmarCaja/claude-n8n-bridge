@@ -60,10 +60,8 @@ let isProcessing = false;
 function runClaudeTask(res, prompt, subject) {
   isProcessing = true;
   console.log(
-    `\n[+] [${new Date().toLocaleTimeString()}] New task received: ${subject || "No subject"}${SKIP_GIT ? " (SKIP_GIT: commit/push will be skipped)" : ""}`,
+    `\n[+] [${new Date().toLocaleTimeString()}] New task received: ${subject}${SKIP_GIT ? " (SKIP_GIT: commit/push will be skipped)" : ""}`,
   );
-
-  const commitSubject = subject || "Code update";
 
   // Prompt/subject travel via env vars (not string-interpolated into the shell command)
   // so no manual escaping is needed and shell metacharacters in them can't inject commands.
@@ -84,7 +82,7 @@ function runClaudeTask(res, prompt, subject) {
       env: {
         ...process.env,
         RUNNER_PROMPT: prompt,
-        RUNNER_SUBJECT: `auto(claude): ${commitSubject}`,
+        RUNNER_SUBJECT: `auto(claude): ${subject}`,
       },
       maxBuffer: 1024 * 1024 * 10,
       timeout: 300000,
@@ -121,8 +119,10 @@ function runClaudeTask(res, prompt, subject) {
 app.post("/api/v1/claude/offer", (req, res) => {
   const { prompt, subject } = req.body;
 
-  if (!prompt) {
-    return res.status(400).json({ error: 'The "prompt" field is required' });
+  for (const [name, value] of Object.entries({ prompt, subject })) {
+    if (!value) {
+      return res.status(400).json({ error: `The "${name}" field is required` });
+    }
   }
 
   if (isProcessing) {
@@ -143,17 +143,16 @@ const BLOGS_DIR = path.join(PROJECT_PATH, "public", "blogs");
 app.post("/api/v1/claude/blog", (req, res) => {
   const { prompt, subject, blogName, filename, media } = req.body;
 
-  if (!prompt) {
-    return res.status(400).json({ error: 'The "prompt" field is required' });
-  }
-  if (!blogName) {
-    return res.status(400).json({ error: 'The "blogName" field is required' });
-  }
-  if (!filename) {
-    return res.status(400).json({ error: 'The "filename" field is required' });
-  }
-  if (!media) {
-    return res.status(400).json({ error: 'The "media" field is required' });
+  for (const [name, value] of Object.entries({
+    prompt,
+    subject,
+    blogName,
+    filename,
+    media,
+  })) {
+    if (!value) {
+      return res.status(400).json({ error: `The "${name}" field is required` });
+    }
   }
 
   // path.basename strips any directory components, so blogName/filename can only

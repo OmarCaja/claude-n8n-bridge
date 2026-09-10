@@ -42,7 +42,7 @@ Runs a prompt against the project — for creating or editing an offer, no attac
 | Field    | Required | Description                                          |
 |----------|----------|-------------------------------------------------------|
 | `prompt` | yes      | Instruction passed to `claude -p`.                     |
-| `subject`| no       | Used as the commit message subject (`auto(claude): <subject>`). |
+| `subject`| yes      | Used as the commit message subject (`auto(claude): <subject>`). |
 
 ### `POST /api/v1/claude/blog`
 
@@ -61,7 +61,7 @@ Writes an image into the project, then runs the same pipeline as `/offer` — fo
 | Field       | Required | Description                                                                 |
 |-------------|----------|-------------------------------------------------------------------------------|
 | `prompt`    | yes      | Instruction passed to `claude -p`.                                            |
-| `subject`   | no       | Used as the commit message subject.                                          |
+| `subject`   | yes      | Used as the commit message subject.                                          |
 | `blogName`  | yes      | Slug for the blog post; the image is written to `PROJECT_PATH/public/blogs/<blogName>/<filename>`. |
 | `filename`  | yes      | Name of the image file to write (e.g. `cover.png`).                          |
 | `media`     | yes      | Base64-encoded image bytes.                                                   |
@@ -83,14 +83,21 @@ pnpm n8n:import   # import n8n/workflows/email-to-claude.json into n8n
 
 n8n runs in Docker (`pnpm docker:up` / `pnpm docker:down`); the runner itself runs on the host so it can invoke the `claude` CLI and reach `PROJECT_PATH` directly. n8n reaches it via `http://host.docker.internal:<PORT>`.
 
-### Email to Claude - Offers
+### Email to Claude - Offers & Blog
 
-`n8n/workflows/email-to-claude.json` is three nodes: an IMAP trigger, a Filter node that only lets through mail from `farmaciaalbinyana@gmail.com`, and an HTTP Request node that forwards the raw email body straight to `/api/v1/claude/offer`. Offer emails aren't parsed into structured fields in n8n — the format varies between emails, so Claude reads the raw text itself (subject + body wrapped in an instruction) and decides how many offers it describes and how to add/update each one on the offers page. After `pnpm n8n:import`, open the workflow in n8n and set up two credentials it references but can't carry secrets for:
+`n8n/workflows/email-to-claude.json`: an IMAP trigger (**New Pharmacy Email**) → a Filter node (**Is From Pharmacy Mailbox**) that only lets through mail from `farmaciaalbinyana@gmail.com` → a Switch node (**Route by Subject**) that routes on the (case-insensitive) email subject — containing "oferta" goes to the offer branch, containing "blog" goes to the blog branch; anything else is silently dropped.
 
-- An **IMAP** credential (on the "New Offer Email" trigger) — your mailbox's IMAP settings.
-- A **Header Auth** credential (on the "Call Runner /offer" HTTP Request node) — Name: `x-api-token`, Value: your `AUTH_TOKEN`.
+The trigger uses IMAP **resolved** format (full MIME parsing via mailparser), not the default `simple` format — `simple` only picks up attachments with `Content-Disposition: attachment`, which misses images pasted or embedded inline in the email body. `resolved` captures both, all under the same `attachment_0`-style binary keys, and it decodes MIME-encoded subjects (accented characters) for free.
 
-The blog pipeline (routing blog emails to `/api/v1/claude/blog` with an attachment) isn't built yet — this workflow only handles offers for now.
+- **Offer branch**: forwards the raw email body straight to `/api/v1/claude/offer`, with a prompt that invokes the target repo's `/add-offer` skill directly. Offer emails aren't parsed into structured fields in n8n — the format varies between emails, so Claude reads the raw text itself and decides how many offers it describes and how to add/update each one on the offers page.
+- **Blog branch**: an Extract From File node (**Attachment to Base64**) converts the email's first attachment (`attachment_0`) into a base64 string, keeping the rest of the item's fields (`options.keepSource: "json"` — without it, this node drops everything except the new field). An HTTP Request node then calls `/api/v1/claude/blog`, with a prompt invoking the target repo's `/add-blog` skill. `blogName` is derived from the subject — an email titled `Blog - Sun Protection Tips` becomes `Sun-Protection-Tips` (everything after `Blog - `, case-insensitive, spaces replaced with hyphens). `filename` comes from the attachment's original name.
+
+After `pnpm n8n:import`, open the workflow in n8n and set up two credentials it references but can't carry secrets for:
+
+- An **IMAP** credential (on the "New Pharmacy Email" trigger) — your mailbox's IMAP settings.
+- A **Header Auth** credential (on both "Call Runner /offer" and "Call Runner /blog" HTTP Request nodes) — Name: `x-api-token`, Value: your `AUTH_TOKEN`.
+
+Both HTTP Request nodes retry automatically (5 tries, 60s apart) on failure — including the `429` the runner returns while another task is already running — so a busy runner doesn't drop an email.
 
 ## Development
 
