@@ -6,6 +6,7 @@ import crypto from "node:crypto";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const HOST = process.env.HOST || "127.0.0.1";
 const PROJECT_PATH = process.env.PROJECT_PATH;
 const AUTH_TOKEN = process.env.AUTH_TOKEN;
 const MAX_FILE_SIZE = process.env.MAX_FILE_SIZE || "20mb";
@@ -192,8 +193,8 @@ app.post("/api/v1/claude/blog", (req, res) => {
   runClaudeTask(res, prompt, subject);
 });
 
-app.listen(PORT, () => {
-  console.log(`[+] Runner listening on http://localhost:${PORT}`);
+app.listen(PORT, HOST, () => {
+  console.log(`[+] Runner listening on http://${HOST}:${PORT}`);
   console.log(`[+] Target repository configured: ${PROJECT_PATH}`);
   console.log(
     SKIP_GIT

@@ -39,7 +39,7 @@
               "rightValue": "farmaciaalbinyana@gmail.com",
               "operator": {
                 "type": "string",
-                "operation": "contains"
+                "operation": "equals"
               }
             }
           ],

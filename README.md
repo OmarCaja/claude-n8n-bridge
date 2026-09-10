@@ -1,6 +1,27 @@
 # claude-n8n-bridge
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Node](https://img.shields.io/badge/node-%3E%3D20.6.0-339933?logo=node.js&logoColor=white)](package.json)
+[![pnpm](https://img.shields.io/badge/maintained%20with-pnpm-f69220?logo=pnpm&logoColor=white)](https://pnpm.io)
+
 Local orchestrator that lets n8n workflows trigger [Claude Code](https://claude.com/claude-code) CLI runs against a target repository. n8n receives an external event (e.g. an email), calls a local Express webhook, which runs `claude -p "<prompt>"` against a project on disk, then commits and pushes whatever Claude changed.
+
+## Contents
+
+- [Requirements](#requirements)
+- [Quick start](#quick-start)
+- [Configuration](#configuration)
+- [API](#api)
+- [n8n workflows](#n8n-workflows)
+- [Development](#development)
+- [License](#license)
+
+## Requirements
+
+- [Node.js](https://nodejs.org) >= 20.6.0
+- [pnpm](https://pnpm.io)
+- [Docker](https://www.docker.com) (runs n8n; the runner itself runs on the host)
+- The [Claude Code](https://claude.com/claude-code) CLI, authenticated and on `PATH`
 
 ## Quick start
 
@@ -16,10 +37,11 @@ Then open n8n at [http://localhost:5678](http://localhost:5678) and build (or im
 
 Set via `.env` (see `.env.example`), loaded with Node's `--env-file-if-exists` — no `dotenv` dependency.
 
-| Variable        | Required | Default | Description                                                                 |
-|-----------------|----------|---------|-------------------------------------------------------------------------------|
-| `PORT`          | no       | `3000`  | Port the runner listens on.                                                   |
-| `AUTH_TOKEN`    | yes      | —       | Shared secret n8n must send as `x-api-token` on every request.                |
+| Variable        | Required | Default       | Description                                                                 |
+|-----------------|----------|---------------|-------------------------------------------------------------------------------|
+| `PORT`          | no       | `3000`        | Port the runner listens on.                                                   |
+| `HOST`          | no       | `127.0.0.1`   | Interface the runner binds to. Loopback-only by default; set `0.0.0.0` only if your deployment needs it (e.g. native Linux Docker, where `host.docker.internal` hits the bridge gateway, not loopback). |
+| `AUTH_TOKEN`    | yes      | —             | Shared secret n8n must send as `x-api-token` on every request.                |
 | `PROJECT_PATH`  | yes      | —       | Absolute path to the git repo Claude Code will edit, commit, and push.        |
 | `MAX_FILE_SIZE` | no       | `20mb`  | Body-size limit for requests; caps the base64 `media` payload on `/blog`.      |
 | `SKIP_GIT`      | no       | `false` | Testing only: run `claude` but skip `git add`/`commit`/`push` entirely.       |
@@ -107,3 +129,7 @@ pnpm test         # node --test
 ```
 
 See [CLAUDE.md](CLAUDE.md) for architecture notes and implementation details.
+
+## License
+
+[MIT](LICENSE) © Omar Caja
