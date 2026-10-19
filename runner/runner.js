@@ -68,8 +68,8 @@ function runClaudeTask(res, prompt, subject) {
   // so no manual escaping is needed and shell metacharacters in them can't inject commands.
   // Skip the commit+push when Claude made no changes, so a no-op run isn't reported as a failure.
   const command = SKIP_GIT
-    ? 'claude --dangerously-skip-permissions -p "$RUNNER_PROMPT"'
-    : 'claude --dangerously-skip-permissions -p "$RUNNER_PROMPT" && ' +
+    ? 'claude --dangerously-skip-permissions -p "$RUNNER_PROMPT" < /dev/null'
+    : 'claude --dangerously-skip-permissions -p "$RUNNER_PROMPT" < /dev/null && ' +
       "git add . && " +
       '(git diff --cached --quiet || (git commit -m "$RUNNER_SUBJECT" && git push))';
 

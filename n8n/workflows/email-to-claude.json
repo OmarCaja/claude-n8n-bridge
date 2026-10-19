@@ -7,7 +7,11 @@
         "mailbox": "INBOX",
         "postProcessAction": "read",
         "format": "resolved",
-        "options": {}
+        "options": {
+          "customEmailConfig": "[\"UNSEEN\", [\"FROM\", \"farmaciaalbinyana@gmail.com\"]]",
+          "forceReconnect": 1,
+          "trackLastMessageId": false
+        }
       },
       "id": "1f1a2b3c-0001-4a1a-8a1a-000000000001",
       "name": "New Pharmacy Email",
@@ -19,7 +23,7 @@
       ],
       "credentials": {
         "imap": {
-          "id": "1",
+          "id": "eAqo5zCcDE3OM1Vl",
           "name": "IMAP account"
         }
       }
@@ -144,7 +148,14 @@
         },
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
-        "options": {}
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 360000
+            }
+          }
+        }
       },
       "id": "1f1a2b3c-0003-4a1a-8a1a-000000000003",
       "name": "Call Runner /offer",
@@ -159,7 +170,7 @@
       "waitBetweenTries": 60000,
       "credentials": {
         "httpHeaderAuth": {
-          "id": "2",
+          "id": "Y7AqzVhogHMsBt4i",
           "name": "Header Auth account"
         }
       }
@@ -214,7 +225,14 @@
         },
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
-        "options": {}
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 360000
+            }
+          }
+        }
       },
       "id": "1f1a2b3c-0006-4a1a-8a1a-000000000006",
       "name": "Call Runner /blog",
@@ -229,7 +247,7 @@
       "waitBetweenTries": 60000,
       "credentials": {
         "httpHeaderAuth": {
-          "id": "2",
+          "id": "Y7AqzVhogHMsBt4i",
           "name": "Header Auth account"
         }
       }
